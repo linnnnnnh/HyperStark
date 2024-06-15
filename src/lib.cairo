@@ -1,25 +1,89 @@
+use starknet::ContractAddress;
+
+// TODO: use OZ
 #[starknet::interface]
-pub trait IHelloStarknet<TContractState> {
-    fn increase_balance(ref self: TContractState, amount: felt252);
-    fn get_balance(self: @TContractState) -> felt252;
+pub trait IERC20<TContractState> {
+    fn name(self: @TContractState) -> felt252;
+    fn symbol(self: @TContractState) -> felt252;
+    fn decimals(self: @TContractState) -> u8;
+    fn total_supply(self: @TContractState) -> u256;
+    fn balance_of(self: @TContractState, account: ContractAddress) -> u256;
+    fn allowance(self: @TContractState, owner: ContractAddress, spender: ContractAddress) -> u256;
+    fn transfer(ref self: TContractState, recipient: ContractAddress, amount: u256) -> bool;
+    fn transfer_from(
+        ref self: TContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256
+    ) -> bool;
+    fn approve(ref self: TContractState, spender: ContractAddress, amount: u256) -> bool;
 }
 
+#[starknet::interface]
+pub trait ISimpleVault<TContractState> {
+    fn deposit(ref self: TContractState, amount: u256);
+    fn withdraw(ref self: TContractState, shares: u256);
+    fn total_supply(ref self: TContractState) -> u256;
+}
+
+// https://starknet-by-example.voyager.online/applications/simple_vault.html
 #[starknet::contract]
-mod HelloStarknet {
+pub mod SimpleVault {
+    use super::{IERC20Dispatcher, IERC20DispatcherTrait};
+    use starknet::{ContractAddress, get_caller_address, get_contract_address};
+
     #[storage]
     struct Storage {
-        balance: felt252, 
+        token: IERC20Dispatcher,
+        total_supply: u256,
+        balance_of: LegacyMap<ContractAddress, u256>
+    }
+
+    #[constructor]
+    fn constructor(ref self: ContractState, token: ContractAddress) {
+        self.token.write(IERC20Dispatcher { contract_address: token });
+    }
+
+    #[generate_trait]
+    impl PrivateFunctions of PrivateFunctionsTrait {
+        fn _mint(ref self: ContractState, to: ContractAddress, shares: u256) {
+            self.total_supply.write(self.total_supply.read() + shares);
+            self.balance_of.write(to, self.balance_of.read(to) + shares);
+        }
+
+        fn _burn(ref self: ContractState, from: ContractAddress, shares: u256) {
+            self.total_supply.write(self.total_supply.read() - shares);
+            self.balance_of.write(from, self.balance_of.read(from) - shares);
+        }
     }
 
     #[abi(embed_v0)]
-    impl HelloStarknetImpl of super::IHelloStarknet<ContractState> {
-        fn increase_balance(ref self: ContractState, amount: felt252) {
-            assert(amount != 0, 'Amount cannot be 0');
-            self.balance.write(self.balance.read() + amount);
+    impl SimpleVault of super::ISimpleVault<ContractState> {
+        fn deposit(ref self: ContractState, amount: u256) {
+            let caller = get_caller_address();
+            let this = get_contract_address();
+
+            let mut shares = 0;
+            if self.total_supply.read() == 0 {
+                shares = amount;
+            } else {
+                let balance = self.token.read().balance_of(this);
+                shares = (amount * self.total_supply.read()) / balance;
+            }
+
+            PrivateFunctions::_mint(ref self, caller, shares);
+            self.token.read().transfer_from(caller, this, amount);
         }
 
-        fn get_balance(self: @ContractState) -> felt252 {
-            self.balance.read()
+        fn withdraw(ref self: ContractState, shares: u256) {
+            let caller = get_caller_address();
+            let this = get_contract_address();
+
+            let balance = self.token.read().balance_of(this);
+            let amount = (shares * balance) / self.total_supply.read();
+            PrivateFunctions::_burn(ref self, caller, shares);
+            self.token.read().transfer(caller, amount);
+        }
+
+        fn total_supply(ref self: ContractState) -> u256 {
+            0
         }
     }
 }

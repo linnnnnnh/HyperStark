@@ -2,46 +2,27 @@ use starknet::ContractAddress;
 
 use snforge_std::{declare, ContractClassTrait};
 
-use hyperstark::IHelloStarknetSafeDispatcher;
-use hyperstark::IHelloStarknetSafeDispatcherTrait;
-use hyperstark::IHelloStarknetDispatcher;
-use hyperstark::IHelloStarknetDispatcherTrait;
+use hyperstark::ISimpleVaultSafeDispatcher;
+use hyperstark::ISimpleVaultSafeDispatcherTrait;
+use hyperstark::ISimpleVaultDispatcher;
+use hyperstark::ISimpleVaultDispatcherTrait;
 
 fn deploy_contract(name: ByteArray) -> ContractAddress {
+    let STRK: felt252 = 0x01a2de9f2895ac4e6cb80c11ecc07ce8062a4ae883f64cb2b1dc6724b85e897d;
+    let mut calldata = ArrayTrait::new();
+    calldata.append(STRK);
+
     let contract = declare(name).unwrap();
-    let (contract_address, _) = contract.deploy(@ArrayTrait::new()).unwrap();
+    let (contract_address, _) = contract.deploy(@calldata).unwrap();
     contract_address
 }
 
 #[test]
-fn test_increase_balance() {
-    let contract_address = deploy_contract("HelloStarknet");
+fn test_initalize_vault() {
+    let contract_address = deploy_contract("SimpleVault");
+    let dispatcher = ISimpleVaultDispatcher { contract_address };
 
-    let dispatcher = IHelloStarknetDispatcher { contract_address };
+    let total_supply_initial = dispatcher.total_supply();
 
-    let balance_before = dispatcher.get_balance();
-    assert(balance_before == 0, 'Invalid balance');
-
-    dispatcher.increase_balance(42);
-
-    let balance_after = dispatcher.get_balance();
-    assert(balance_after == 42, 'Invalid balance');
-}
-
-#[test]
-#[feature("safe_dispatcher")]
-fn test_cannot_increase_balance_with_zero_value() {
-    let contract_address = deploy_contract("HelloStarknet");
-
-    let safe_dispatcher = IHelloStarknetSafeDispatcher { contract_address };
-
-    let balance_before = safe_dispatcher.get_balance().unwrap();
-    assert(balance_before == 0, 'Invalid balance');
-
-    match safe_dispatcher.increase_balance(0) {
-        Result::Ok(_) => core::panic_with_felt252('Should have panicked'),
-        Result::Err(panic_data) => {
-            assert(*panic_data.at(0) == 'Amount cannot be 0', *panic_data.at(0));
-        }
-    };
+    assert(total_supply_initial == 0, 'supply not zero');
 }
