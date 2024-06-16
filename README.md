@@ -6,6 +6,12 @@ This project aims to automate the compounding of rewards for users who deposit t
 By automating the process of harvesting and reinvesting rewards, we can simplify the user experience and boost yield. 
 Below is a detailed breakdown of the workflows, technical requirements, and development plan.
 
+## 🛠️ Key Points
+### **1. Automated Reward Harvesting and Reinvestment** 
+- Utilize a keeper to automate the process of harvesting rewards and reinvesting them so that users only need to deposit tokens once, and the rest is handled automatically.
+### **2. Simplified User Interface** 
+- Provide only deposit and withdraw functions, allowing users to deposit funds into the vault and withdraw their funds along with rewards.
+
 ## 🔓 Difference
 > Before Nostra Service
 
