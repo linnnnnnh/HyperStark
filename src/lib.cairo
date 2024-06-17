@@ -17,10 +17,16 @@ pub trait IERC20<TContractState> {
 }
 
 #[starknet::interface]
+pub trait IMintable<TContractState> {
+    fn mint(ref self: TContractState, recipient: ContractAddress, amount: u256) -> bool;
+}
+
+#[starknet::interface]
 pub trait ISimpleVault<TContractState> {
-    fn deposit(ref self: TContractState, amount: u256);
+    fn deposit(ref self: TContractState, amount: u256) -> u256;
     fn withdraw(ref self: TContractState, shares: u256);
     fn total_supply(ref self: TContractState) -> u256;
+    fn token(ref self: TContractState) -> felt252;
 }
 
 // https://starknet-by-example.voyager.online/applications/simple_vault.html
@@ -56,7 +62,7 @@ pub mod SimpleVault {
 
     #[abi(embed_v0)]
     impl SimpleVault of super::ISimpleVault<ContractState> {
-        fn deposit(ref self: ContractState, amount: u256) {
+        fn deposit(ref self: ContractState, amount: u256) -> u256 {
             let caller = get_caller_address();
             let this = get_contract_address();
 
@@ -70,6 +76,8 @@ pub mod SimpleVault {
 
             PrivateFunctions::_mint(ref self, caller, shares);
             self.token.read().transfer_from(caller, this, amount);
+
+            shares
         }
 
         fn withdraw(ref self: ContractState, shares: u256) {
@@ -84,6 +92,10 @@ pub mod SimpleVault {
 
         fn total_supply(ref self: ContractState) -> u256 {
             0
+        }
+
+        fn token(ref self: ContractState) -> felt252 {
+            self.token.read().name()
         }
     }
 }
