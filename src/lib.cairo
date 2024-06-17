@@ -17,11 +17,6 @@ pub trait IERC20<TContractState> {
 }
 
 #[starknet::interface]
-pub trait IMintable<TContractState> {
-    fn mint(ref self: TContractState, recipient: ContractAddress, amount: u256) -> bool;
-}
-
-#[starknet::interface]
 pub trait ISimpleVault<TContractState> {
     fn deposit(ref self: TContractState, amount: u256) -> u256;
     fn withdraw(ref self: TContractState, shares: u256);
@@ -29,22 +24,53 @@ pub trait ISimpleVault<TContractState> {
     fn token(ref self: TContractState) -> felt252;
 }
 
+#[starknet::interface]
+pub trait INostraRouter<TContractState> {
+    fn add_liquidity(
+        ref self: TContractState,
+        pair: ContractAddress,
+        amount_0_desired: u256,
+        amount_1_desired: u256,
+        amount_0_min: u256,
+        amount_1_min: u256,
+        to: ContractAddress,
+        deadline: u64,
+    ) -> (u256, u256, u256);
+}
+
+#[starknet::interface]
+pub trait INostraPool<TContractState> {
+    fn swap(
+        ref self: TContractState,
+        amount_0_out: u256,
+        amount_1_out: u256,
+        to: ContractAddress,
+        data: Array<felt252>,
+    );
+}
+
 // https://starknet-by-example.voyager.online/applications/simple_vault.html
 #[starknet::contract]
 pub mod SimpleVault {
     use super::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use starknet::{ContractAddress, get_caller_address, get_contract_address};
+    use super::{INostraRouterDispatcher, INostraRouterDispatcherTrait};
+    use super::{INostraPoolDispatcher, INostraPoolDispatcherTrait};
+    use starknet::{ContractAddress, get_caller_address, get_contract_address, get_block_timestamp};
 
     #[storage]
     struct Storage {
         token: IERC20Dispatcher,
+        pool: INostraPoolDispatcher,
+        router: INostraRouterDispatcher,
         total_supply: u256,
         balance_of: LegacyMap<ContractAddress, u256>
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, token: ContractAddress) {
+    fn constructor(ref self: ContractState, token: ContractAddress, router: ContractAddress, pool: ContractAddress) {
         self.token.write(IERC20Dispatcher { contract_address: token });
+        self.router.write(INostraRouterDispatcher { contract_address: router });
+        self.pool.write(INostraPoolDispatcher { contract_address: pool });
     }
 
     #[generate_trait]
@@ -74,8 +100,28 @@ pub mod SimpleVault {
                 shares = (amount * self.total_supply.read()) / balance;
             }
 
-            PrivateFunctions::_mint(ref self, caller, shares);
             self.token.read().transfer_from(caller, this, amount);
+
+            // TODO: cast from storage
+            let pool_address: ContractAddress = 0x01a2de9f2895ac4e6cb80c11ecc07ce8062a4ae883f64cb2b1dc6724b85e897d.try_into().unwrap();
+            self.token.read().transfer(pool_address, amount / 2); // TODO: use a math library
+
+            self.pool.read().swap(
+                0,
+                69289219604178342, // TODO: calculate output with user input
+                this,
+                ArrayTrait::new()
+            );
+
+            // self.router.read().add_liquidity(
+                // self.pool.read(),
+                // amount,
+                // amount,
+                // zero, // TODO: add slippage zero,
+                // caller, get_block_timestamp() + 1000
+            // );
+
+            PrivateFunctions::_mint(ref self, caller, shares);
 
             shares
         }
