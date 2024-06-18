@@ -80,20 +80,26 @@ fn test_vault_deposit() {
     let vault = ISimpleVaultDispatcher { contract_address: vault_address };
     let alice: ContractAddress = ALICE();
     let token = IERC20Dispatcher { contract_address: STRK_ADDRESS() };
+    let pool = IERC20Dispatcher { contract_address: NOSTRA_POOL_ADDRESS() };
 
-    let amount = token.balance_of(alice);
+    let mut amount = 300000000000000000000; // TODO: fuzz
+    if token.balance_of(alice) < amount {
+        amount = token.balance_of(alice);
+        assert(amount > 0, 'alice has no strk');
+    }
+
     let pool_strk_before = token.balance_of(NOSTRA_POOL_ADDRESS());
-    assert(amount > 0, 'alice has no strk');
 
+    // ACT
     start_cheat_caller_address(STRK_ADDRESS(), alice);
     token.approve(vault_address, amount);
 
     stop_cheat_caller_address(STRK_ADDRESS());
     start_cheat_caller_address(vault_address, alice);
     let shares_minted = vault.deposit(amount);
-    // println!("{}", get_call_trace());
 
+    // ASSERT
     assert(shares_minted == amount, 'shares not 1:1 to deposit');
     assert(token.balance_of(NOSTRA_POOL_ADDRESS()) > pool_strk_before, 'pool didnt receive tokens');
-    // TODO: assert vault received LP tokens
+    assert(pool.balance_of(vault_address) > 0, 'pool didnt add liquidity');
 }

@@ -47,6 +47,13 @@ pub trait INostraPool<TContractState> {
         to: ContractAddress,
         data: Array<felt252>,
     );
+    fn out_given_in(
+        ref self: TContractState,
+        amount_out: u256,
+        first_token_in: bool,
+    ) -> u256;
+    fn token_0(ref self: TContractState) -> ContractAddress;
+    fn token_1(ref self: TContractState) -> ContractAddress;
 }
 
 // https://starknet-by-example.voyager.online/applications/simple_vault.html
@@ -71,6 +78,11 @@ pub mod SimpleVault {
         self.token.write(IERC20Dispatcher { contract_address: token });
         self.router.write(INostraRouterDispatcher { contract_address: router });
         self.pool.write(INostraPoolDispatcher { contract_address: pool });
+        
+        let MAX_INT = 115792089237316195423570985008687907853269984665640564039457584007913129639935;
+        let token_1 = IERC20Dispatcher { contract_address: self.pool.read().token_1() };
+        token_1.approve(router, MAX_INT);
+        self.token.read().approve(router, MAX_INT);
     }
 
     #[generate_trait]
@@ -102,24 +114,34 @@ pub mod SimpleVault {
 
             self.token.read().transfer_from(caller, this, amount);
 
+            let token1_amount = self.pool.read().out_given_in((amount / 2), true); // TODO: use a math library, round down
+
             // TODO: cast from storage
             let pool_address: ContractAddress = 0x01a2de9f2895ac4e6cb80c11ecc07ce8062a4ae883f64cb2b1dc6724b85e897d.try_into().unwrap();
-            self.token.read().transfer(pool_address, amount / 2); // TODO: use a math library
+            self.token.read().transfer(pool_address, amount / 2);
 
             self.pool.read().swap(
                 0,
-                69289219604178342, // TODO: calculate output with user input
+                token1_amount, // TODO: calculate output with user input
                 this,
                 ArrayTrait::new()
             );
 
-            // self.router.read().add_liquidity(
-                // self.pool.read(),
-                // amount,
-                // amount,
-                // zero, // TODO: add slippage zero,
-                // caller, get_block_timestamp() + 1000
-            // );
+            let token_1 = IERC20Dispatcher { contract_address: self.pool.read().token_1() };
+
+            let (_actual_in_0, _actual_in_1, lp_out) = self.router.read().add_liquidity(
+                pool_address,
+                amount / 2,
+                token_1.balance_of(this),
+                0, // TODO: add slippage zero,
+                0, // TODO: add slippage zero,
+                this,
+                get_block_timestamp() + 1000
+            );
+
+            // what to do with (amount_in - actual_in)?
+
+            println!("{:?}", lp_out); // TODO: make this an event
 
             PrivateFunctions::_mint(ref self, caller, shares);
 
