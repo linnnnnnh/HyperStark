@@ -103,3 +103,34 @@ fn test_vault_deposit() {
     assert(token.balance_of(NOSTRA_POOL_ADDRESS()) > pool_strk_before, 'pool didnt receive tokens');
     assert(pool.balance_of(vault_address) > 0, 'pool didnt add liquidity');
 }
+
+#[test]
+#[fork("MAIN_NET")]
+fn test_vault_withdraw_all() {
+    let vault_address = deploy_contract("SimpleVault");
+    let vault = ISimpleVaultDispatcher { contract_address: vault_address };
+    let alice: ContractAddress = ALICE();
+    let token = IERC20Dispatcher { contract_address: STRK_ADDRESS() };
+    let pool = IERC20Dispatcher { contract_address: NOSTRA_POOL_ADDRESS() };
+
+    // TODO: test with multiple accounts
+    let mut amount = 300000000000000000000; // TODO: fuzz
+    if token.balance_of(alice) < amount {
+        amount = token.balance_of(alice);
+        assert(amount > 0, 'alice has no strk');
+    }
+
+    // ACT
+    start_cheat_caller_address(STRK_ADDRESS(), alice);
+    token.approve(vault_address, amount);
+
+    stop_cheat_caller_address(STRK_ADDRESS());
+    start_cheat_caller_address(vault_address, alice);
+    let shares_minted = vault.deposit(amount);
+    vault.withdraw(shares_minted);
+
+    // ASSERT
+    assert(vault.total_supply() == 0, 'vault still has shares');
+    assert(pool.balance_of(vault_address) == 0, 'pool still has LP');
+    assert(token.balance_of(vault_address) == 0, 'pool has remaining STRK');
+}

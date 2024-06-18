@@ -19,7 +19,7 @@ pub trait IERC20<TContractState> {
 #[starknet::interface]
 pub trait ISimpleVault<TContractState> {
     fn deposit(ref self: TContractState, amount: u256) -> u256;
-    fn withdraw(ref self: TContractState, shares: u256);
+    fn withdraw(ref self: TContractState, shares: u256) -> u256;
     fn total_supply(ref self: TContractState) -> u256;
     fn token(ref self: TContractState) -> felt252;
 }
@@ -36,6 +36,15 @@ pub trait INostraRouter<TContractState> {
         to: ContractAddress,
         deadline: u64,
     ) -> (u256, u256, u256);
+    fn remove_liquidity(
+        ref self: TContractState,
+        pair: ContractAddress,
+        liquidity: u256,
+        amount_0_min: u256,
+        amount_1_min: u256,
+        to: ContractAddress,
+        deadline: u64,
+    ) -> (u256, u256);
 }
 
 #[starknet::interface]
@@ -54,6 +63,9 @@ pub trait INostraPool<TContractState> {
     ) -> u256;
     fn token_0(ref self: TContractState) -> ContractAddress;
     fn token_1(ref self: TContractState) -> ContractAddress;
+    fn transfer(ref self: TContractState, recipient: ContractAddress, amount: u256) -> bool;
+    fn approve(ref self: TContractState, spender: ContractAddress, amount: u256) -> bool;
+    fn balance_of(self: @TContractState, account: ContractAddress) -> u256;
 }
 
 // https://starknet-by-example.voyager.online/applications/simple_vault.html
@@ -83,6 +95,7 @@ pub mod SimpleVault {
         let token_1 = IERC20Dispatcher { contract_address: self.pool.read().token_1() };
         token_1.approve(router, MAX_INT);
         self.token.read().approve(router, MAX_INT);
+        self.pool.read().approve(router, MAX_INT);
     }
 
     #[generate_trait]
@@ -108,7 +121,7 @@ pub mod SimpleVault {
             if self.total_supply.read() == 0 {
                 shares = amount;
             } else {
-                let balance = self.token.read().balance_of(this);
+                let balance = self.pool.read().balance_of(this);
                 shares = (amount * self.total_supply.read()) / balance;
             }
 
@@ -122,7 +135,7 @@ pub mod SimpleVault {
 
             self.pool.read().swap(
                 0,
-                token1_amount, // TODO: calculate output with user input
+                token1_amount,
                 this,
                 ArrayTrait::new()
             );
@@ -133,8 +146,8 @@ pub mod SimpleVault {
                 pool_address,
                 amount / 2,
                 token_1.balance_of(this),
-                0, // TODO: add slippage zero,
-                0, // TODO: add slippage zero,
+                0, // TODO: add slippage,
+                0, // TODO: add slippage,
                 this,
                 get_block_timestamp() + 1000
             );
@@ -148,18 +161,48 @@ pub mod SimpleVault {
             shares
         }
 
-        fn withdraw(ref self: ContractState, shares: u256) {
+        fn withdraw(ref self: ContractState, shares: u256) -> u256 {
             let caller = get_caller_address();
             let this = get_contract_address();
 
-            let balance = self.token.read().balance_of(this);
+            let balance = self.pool.read().balance_of(this);
             let amount = (shares * balance) / self.total_supply.read();
             PrivateFunctions::_burn(ref self, caller, shares);
-            self.token.read().transfer(caller, amount);
+
+            let pool_address: ContractAddress = 0x01a2de9f2895ac4e6cb80c11ecc07ce8062a4ae883f64cb2b1dc6724b85e897d.try_into().unwrap();
+
+            let (token_0_out, token_1_out) = self.router.read().remove_liquidity(
+                pool_address,
+                amount,
+                0, // TODO: add slippage,
+                0, // TODO: add slippage,
+                this,
+                get_block_timestamp() + 1000
+            );
+
+            // swap token1 for token0
+            let token_0_balance_before = self.token.read().balance_of(this);
+
+            let token_0_amount = self.pool.read().out_given_in(token_1_out, false);
+            let token_1 = IERC20Dispatcher { contract_address: self.pool.read().token_1() };
+            token_1.transfer(pool_address, token_1_out);
+            self.pool.read().swap(
+                token_0_amount,
+                0, // TODO: add slippage
+                this,
+                ArrayTrait::new()
+            );
+
+            let token_0_received = self.token.read().balance_of(this) - token_0_balance_before;
+            let token_0_to_withdraw = token_0_received + token_0_out;
+
+            self.token.read().transfer(caller, token_0_to_withdraw);
+
+            token_0_to_withdraw
         }
 
         fn total_supply(ref self: ContractState) -> u256 {
-            0
+            self.total_supply.read()
         }
 
         fn token(ref self: ContractState) -> felt252 {
