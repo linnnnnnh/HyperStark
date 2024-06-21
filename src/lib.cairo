@@ -76,13 +76,15 @@ pub mod SimpleVault {
     use super::{INostraPoolDispatcher, INostraPoolDispatcherTrait};
     use starknet::{ContractAddress, get_caller_address, get_contract_address, get_block_timestamp};
 
+    const pool_address: felt252 = 0x01a2de9f2895ac4e6cb80c11ecc07ce8062a4ae883f64cb2b1dc6724b85e897d;
+
     #[storage]
     struct Storage {
         token: IERC20Dispatcher,
         pool: INostraPoolDispatcher,
         router: INostraRouterDispatcher,
         total_supply: u256,
-        balance_of: LegacyMap<ContractAddress, u256>
+        balance_of: LegacyMap<ContractAddress, u256>,
     }
 
     #[constructor]
@@ -90,12 +92,24 @@ pub mod SimpleVault {
         self.token.write(IERC20Dispatcher { contract_address: token });
         self.router.write(INostraRouterDispatcher { contract_address: router });
         self.pool.write(INostraPoolDispatcher { contract_address: pool });
-        
+
         let MAX_INT = 115792089237316195423570985008687907853269984665640564039457584007913129639935;
         let token_1 = IERC20Dispatcher { contract_address: self.pool.read().token_1() };
         token_1.approve(router, MAX_INT);
         self.token.read().approve(router, MAX_INT);
         self.pool.read().approve(router, MAX_INT);
+    }
+
+    #[event]
+    #[derive(Drop, starknet::Event)]
+    enum Event {
+        LpOut: LpOut,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct LpOut {
+        #[key]
+        out: u256,
     }
 
     #[generate_trait]
@@ -127,11 +141,9 @@ pub mod SimpleVault {
 
             self.token.read().transfer_from(caller, this, amount);
 
-            let token1_amount = self.pool.read().out_given_in((amount / 2), true); // TODO: use a math library, round down
+            let token1_amount = self.pool.read().out_given_in((amount / 2), true);
 
-            // TODO: cast from storage
-            let pool_address: ContractAddress = 0x01a2de9f2895ac4e6cb80c11ecc07ce8062a4ae883f64cb2b1dc6724b85e897d.try_into().unwrap();
-            self.token.read().transfer(pool_address, amount / 2);
+            self.token.read().transfer(pool_address.try_into().unwrap(), amount / 2);
 
             self.pool.read().swap(
                 0,
@@ -142,8 +154,10 @@ pub mod SimpleVault {
 
             let token_1 = IERC20Dispatcher { contract_address: self.pool.read().token_1() };
 
+            // Slippage=((Executed Price − Expected Price)/Expected Price) × 100
+
             let (_actual_in_0, _actual_in_1, lp_out) = self.router.read().add_liquidity(
-                pool_address,
+                pool_address.try_into().unwrap(),
                 amount / 2,
                 token_1.balance_of(this),
                 0, // TODO: add slippage,
@@ -154,7 +168,7 @@ pub mod SimpleVault {
 
             // what to do with (amount_in - actual_in)?
 
-            println!("{:?}", lp_out); // TODO: make this an event
+            self.emit(LpOut { out: lp_out });
 
             PrivateFunctions::_mint(ref self, caller, shares);
 
@@ -169,10 +183,8 @@ pub mod SimpleVault {
             let amount = (shares * balance) / self.total_supply.read();
             PrivateFunctions::_burn(ref self, caller, shares);
 
-            let pool_address: ContractAddress = 0x01a2de9f2895ac4e6cb80c11ecc07ce8062a4ae883f64cb2b1dc6724b85e897d.try_into().unwrap();
-
             let (token_0_out, token_1_out) = self.router.read().remove_liquidity(
-                pool_address,
+                pool_address.try_into().unwrap(),
                 amount,
                 0, // TODO: add slippage,
                 0, // TODO: add slippage,
@@ -185,7 +197,7 @@ pub mod SimpleVault {
 
             let token_0_amount = self.pool.read().out_given_in(token_1_out, false);
             let token_1 = IERC20Dispatcher { contract_address: self.pool.read().token_1() };
-            token_1.transfer(pool_address, token_1_out);
+            token_1.transfer(pool_address.try_into().unwrap(), token_1_out);
             self.pool.read().swap(
                 token_0_amount,
                 0, // TODO: add slippage
