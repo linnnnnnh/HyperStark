@@ -1,0 +1,13 @@
+.root {
+  width: 10%;
+  align-self: stretch;
+  flex-direction: column;
+  background-color: #0000000f;
+  box-shadow: inset 0px 1px 0px #b9b9b9, inset -1px 0px 0px #b9b9b9;
+}
+.content {
+  height: min-content;
+  align-self: stretch;
+  padding: 10px 12px;
+  overflow: hidden;
+}

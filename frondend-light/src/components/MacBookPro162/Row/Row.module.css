@@ -1,0 +1,22 @@
+.cell.cell {
+  width: initial;
+  flex: 1;
+}
+.cell2.cell2 {
+  width: initial;
+  flex: 1;
+}
+.cell3.cell3 {
+  width: initial;
+  flex: 1;
+}
+.cell4.cell4 {
+  width: initial;
+  flex: 1;
+}
+.root {
+  height: min-content;
+  align-self: stretch;
+  background-color: #fff0;
+  overflow: hidden;
+}
