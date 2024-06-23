@@ -3,10 +3,10 @@ use starknet::ContractAddress;
 use snforge_std::{declare, ContractClassTrait, start_cheat_caller_address, stop_cheat_caller_address};
 use snforge_std::trace::{get_call_trace};
 
-use hyperstark::ISimpleVaultSafeDispatcher;
-use hyperstark::ISimpleVaultSafeDispatcherTrait;
-use hyperstark::ISimpleVaultDispatcher;
-use hyperstark::ISimpleVaultDispatcherTrait;
+use hyperstark::vault::ISimpleVaultSafeDispatcher;
+use hyperstark::vault::ISimpleVaultSafeDispatcherTrait;
+use hyperstark::vault::ISimpleVaultDispatcher;
+use hyperstark::vault::ISimpleVaultDispatcherTrait;
 
 // TODO: make these global variables
 fn STRK() -> felt252 {
@@ -64,6 +64,7 @@ fn deploy_contract(name: ByteArray) -> ContractAddress {
 }
 
 #[test]
+#[fork("MAIN_NET")]
 fn test_initalize_vault() {
     let contract_address = deploy_contract("SimpleVault");
     let dispatcher = ISimpleVaultDispatcher { contract_address };
