@@ -95,10 +95,6 @@ pub mod SimpleVault {
         total_supply: u256,
         // Vault share of the user 
         vault_shares_of: LegacyMap<ContractAddress, u256>,
-        // Amount of STRK deposited by the user  
-        deposited: LegacyMap<ContractAddress, u256>,
-        // LP tokens received by the user after deposit  
-        LP_token_of: LegacyMap<ContractAddress, u256>
     }
 
     #[constructor]
@@ -164,8 +160,6 @@ pub mod SimpleVault {
             let caller = get_caller_address();
             let this = get_contract_address();
 
-            self.deposited.write(caller, amount);
-
             // Calculate the shares given the amount deposited
             let mut shares = 0;
             if self.total_supply.read() == 0 {
@@ -205,8 +199,6 @@ pub mod SimpleVault {
                 this, // vault
                 get_block_timestamp() + 1000
             );
-
-            self.LP_token_of.write(caller, lp_out);
 
             // Question: what to do with (amount_in - actual_in)?
 
@@ -272,7 +264,7 @@ pub mod SimpleVault {
         fn harvest(ref self: ContractState, account: ContractAddress, amount: u128, proof: felt252) {
             
             // Claim the rewards 
-            let rewards: u128 = self.claimer.write(amount, proof);
+            let rewards: u256 = self.claimer.write(amount, proof);
             
             // Reinvest the corresponding rewards to the pool
             self.deposit.write(rewards);
