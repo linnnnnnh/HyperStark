@@ -6,6 +6,9 @@ This project aims to automate the compounding of rewards for users who deposit t
 By automating the process of harvesting and reinvesting rewards, we can simplify the user experience and boost yield. 
 Below is a detailed breakdown of the workflows, technical requirements, and development plan.
 
+## 🖥️ Front-end Code
+You can access the frontend code at this address: [https://github.com/Sparadrap1101/Starknet-Scaffold](https://github.com/Sparadrap1101/Starknet-Scaffold)
+
 ## 🛠️ Key Points
 ### **1. Automated Reward Harvesting and Reinvestment** 
 - **Automation with Keeper:** Utilize a keeper to automate the process of harvesting rewards and reinvesting them. This means users only need to deposit tokens once, and the system will automatically handle the harvesting of rewards and reinvestment of STRK or any other applicable tokens.
