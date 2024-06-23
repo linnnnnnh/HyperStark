@@ -25,7 +25,7 @@ pub trait ISimpleVault<TContractState> {
 }
 
 #[starknet::interface]
-pub trait INostraRouter<TContractState> {
+pub trait Iadd_liquidityNostraRouter<TContractState> {
     fn add_liquidity(
         ref self: TContractState,
         pair: ContractAddress,
@@ -70,12 +70,18 @@ pub trait INostraPool<TContractState> {
     fn get_reserves(self: @TContractState) -> (u256, u256);
 }
 
+#[starknet::interface]
+pub trait INostraClaimer<TContractState> {
+    fn claim(ref self: TContractState, amount: u128, proof: felt252);
+}
+
 // https://starknet-by-example.voyager.online/applications/simple_vault.html
 #[starknet::contract]
 pub mod SimpleVault {
     use super::{IERC20Dispatcher, IERC20DispatcherTrait};
     use super::{INostraRouterDispatcher, INostraRouterDispatcherTrait};
     use super::{INostraPoolDispatcher, INostraPoolDispatcherTrait};
+    use super::{INostraClaimer, INostraClaimerTrait};
     use starknet::{ContractAddress, get_caller_address, get_contract_address, get_block_timestamp};
 
     const pool_address: felt252 = 0x01a2de9f2895ac4e6cb80c11ecc07ce8062a4ae883f64cb2b1dc6724b85e897d;
@@ -85,6 +91,7 @@ pub mod SimpleVault {
         token: IERC20Dispatcher,
         pool: INostraPoolDispatcher,
         router: INostraRouterDispatcher,
+        claimer: INostraClaimerTrait, 
         total_supply: u256,
         // Vault share of the user 
         vault_shares_of: LegacyMap<ContractAddress, u256>,
@@ -95,10 +102,11 @@ pub mod SimpleVault {
     }
 
     #[constructor]
-    fn constructor(ref self: ContractState, token: ContractAddress, router: ContractAddress, pool: ContractAddress) {
+    fn constructor(ref self: ContractState, token: ContractAddress, router: ContractAddress, pool: ContractAddress, claimer: ContractAddress) {
         self.token.write(IERC20Dispatcher { contract_address: token });
         self.router.write(INostraRouterDispatcher { contract_address: router });
         self.pool.write(INostraPoolDispatcher { contract_address: pool });
+        self.claimer.write(INostraClaimerTrait { contract_address: claimer});
 
         let MAX_INT = 115792089237316195423570985008687907853269984665640564039457584007913129639935;
         let token_1 = IERC20Dispatcher { contract_address: self.pool.read().token_1() };
@@ -261,51 +269,15 @@ pub mod SimpleVault {
         }
 
         
-        fn harvest(ref self: ContractState, account: ContractAddress, incentive_budget: u256) {
-
-            // Calculate the STRK rewards distribution
-            // Formula: rewards = incentive_budget * (first_wk_share% * 0.5 + sec_wk_share% * 0.5)
-            // https://docs.nostra.finance/start-here/starknet-defi-spring
-            // Question: where do we know the amount of incentive budget
-
-            // Setup the timestamps for 7 and 14 days 
-            let sevenDaysLater = get_block_timestamp() + 86400 * 7;
-
-            let mut pool_share_first_wk: u256 = 0; 
-            let mut rewards: u256 = 0; 
-
-            // If timestamp + 7 days, calculate the pool share 
-            if get_block_timestamp() == sevenDaysLater {
-                pool_share_first_wk = (self.LP_token_of.read(account) * 100_u256) / self.pool.read().total_supply;
-            } 
-            // If timestamp + 14 days, calculate the second pool share
-            if get_block_timestamp() == sevenDaysLater {
-                let pool_share_sec_wk: u256 = (self.LP_token_of.read(account) * 100_u256) / self.pool.read().total_supply;
-
-                // Apply the formula
-                let pool_share_two_wks: u256 = (pool_share_first_wk + pool_share_sec_wk) * 50;
-                rewards: u256 = incentive_budget * pool_share_two_wks;
-            }
+        fn harvest(ref self: ContractState, account: ContractAddress, amount: u128, proof: felt252) {
             
-            // If user has earned rewards, remove the corresponding amount from the pool and add it back to it
-            if rewards > 0 {
-                // Calculate the vault shares given the rewards:
-                let mut vault_share = 0;
-                if self.total_supply.read() == 0 {
-                    vault_share = rewards;
-                } else {
-                    let balance = self.pool.read().balance_of(this);
-                    vault_share = (rewards * self.total_supply.read()) / balance;
-                }
+            // Claim the rewards 
+            let rewards: u128 = self.claimer.write(amount, proof);
+            
+            // Reinvest the corresponding rewards to the pool
+            self.deposit.write(rewards);
 
-                // Withdraw the rewards given the corresponding vault share
-                self.withdraw.write(vault_share);
-
-                // Reinvest the corresponding rewards to the pool
-                self.deposit.write(rewards);
-
-                self.emit(Harvested { user: account, reinvested_rewards: rewards });                
-            }
+            self.emit(Harvested { user: account, reinvested_rewards: rewards });                
         }
 
         fn total_supply(self: @ContractState) -> u256 {
@@ -314,6 +286,11 @@ pub mod SimpleVault {
         
         fn token(self: @ContractState) -> felt252 {
             self.token.read().name() // Question: what is the name? should be added
+        }
+
+        // Function to update the claim contract address 
+        fn updateNostraClaimer(ref self: ContractState, newAddress: ContractAddress) {
+            self.claimer.write(newAddress);
         }
     }
 }
