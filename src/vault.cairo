@@ -22,6 +22,7 @@ pub trait ISimpleVault<TContractState> {
     fn withdraw(ref self: TContractState, shares: u256) -> u256;
     fn total_supply(self: @TContractState) -> u256;
     fn token(self: @TContractState) -> felt252;
+    fn only_owner(self: @TContractState);
 }
 
 #[starknet::interface]
@@ -72,7 +73,7 @@ pub trait INostraPool<TContractState> {
 
 #[starknet::interface]
 pub trait INostraClaimer<TContractState> {
-    fn claim(ref self: TContractState, amount: u128, proof: felt252);
+    fn claim(ref self: TContractState, amount: u128, proof: Array<felt252>);
 }
 
 // https://starknet-by-example.voyager.online/applications/simple_vault.html
@@ -92,9 +93,12 @@ pub mod SimpleVault {
         pool: INostraPoolDispatcher,
         router: INostraRouterDispatcher,
         claimer: INostraClaimerTrait, 
+        accessControl: IAccessControlDispatcher,
         total_supply: u256,
         // Vault share of the user 
         vault_shares_of: LegacyMap<ContractAddress, u256>,
+        // Role 'owner': only one address
+        owner: ContractAddress,
     }
 
     #[constructor]
@@ -109,6 +113,7 @@ pub mod SimpleVault {
         token_1.approve(router, MAX_INT);
         self.token.read().approve(router, MAX_INT);
         self.pool.read().approve(router, MAX_INT);
+        self.owner.write(get_caller_address());
     }
 
     // Events 
@@ -156,6 +161,11 @@ pub mod SimpleVault {
 
     #[abi(embed_v0)]
     impl SimpleVault of super::ISimpleVault<ContractState> {
+        #[inline(always)]
+        fn only_owner(self: @ContractState) {
+            assert!(Contract::is_owner(self), "Not owner");
+        }
+
         fn deposit(ref self: ContractState, amount: u256) -> u256 {
             let caller = get_caller_address();
             let this = get_contract_address();
@@ -261,7 +271,7 @@ pub mod SimpleVault {
         }
 
         
-        fn harvest(ref self: ContractState, account: ContractAddress, amount: u128, proof: felt252) {
+        fn harvest(ref self: ContractState, account: ContractAddress, amount: u128, proof: Array<felt252>) {
             
             // Claim the rewards 
             let rewards: u256 = self.claimer.write(amount, proof);
@@ -282,6 +292,7 @@ pub mod SimpleVault {
 
         // Function to update the claim contract address 
         fn updateNostraClaimer(ref self: ContractState, newAddress: ContractAddress) {
+            self.only_owner.read();
             self.claimer.write(newAddress);
         }
     }
