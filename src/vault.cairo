@@ -22,11 +22,13 @@ pub trait ISimpleVault<TContractState> {
     fn withdraw(ref self: TContractState, shares: u256) -> u256;
     fn total_supply(self: @TContractState) -> u256;
     fn token(self: @TContractState) -> felt252;
+    fn harvest(ref self: TContractState, account: ContractAddress, amount: u128, proof: Array<felt252>);
     fn only_owner(self: @TContractState);
+    fn is_owner(self: @TContractState) -> bool;
 }
 
 #[starknet::interface]
-pub trait Iadd_liquidityNostraRouter<TContractState> {
+pub trait INostraRouter<TContractState> {
     fn add_liquidity(
         ref self: TContractState,
         pair: ContractAddress,
@@ -82,7 +84,7 @@ pub mod SimpleVault {
     use super::{IERC20Dispatcher, IERC20DispatcherTrait};
     use super::{INostraRouterDispatcher, INostraRouterDispatcherTrait};
     use super::{INostraPoolDispatcher, INostraPoolDispatcherTrait};
-    use super::{INostraClaimer, INostraClaimerTrait};
+    use super::{INostraClaimerDispatcher, INostraClaimerDispatcherTrait};
     use starknet::{ContractAddress, get_caller_address, get_contract_address, get_block_timestamp};
 
     const pool_address: felt252 = 0x01a2de9f2895ac4e6cb80c11ecc07ce8062a4ae883f64cb2b1dc6724b85e897d;
@@ -92,8 +94,7 @@ pub mod SimpleVault {
         token: IERC20Dispatcher,
         pool: INostraPoolDispatcher,
         router: INostraRouterDispatcher,
-        claimer: INostraClaimerTrait, 
-        accessControl: IAccessControlDispatcher,
+        claimer: INostraClaimerDispatcher, 
         total_supply: u256,
         // Vault share of the user 
         vault_shares_of: LegacyMap<ContractAddress, u256>,
@@ -106,7 +107,7 @@ pub mod SimpleVault {
         self.token.write(IERC20Dispatcher { contract_address: token });
         self.router.write(INostraRouterDispatcher { contract_address: router });
         self.pool.write(INostraPoolDispatcher { contract_address: pool });
-        self.claimer.write(INostraClaimerTrait { contract_address: claimer});
+        self.claimer.write(INostraClaimerDispatcher { contract_address: claimer});
 
         let MAX_INT = 115792089237316195423570985008687907853269984665640564039457584007913129639935;
         let token_1 = IERC20Dispatcher { contract_address: self.pool.read().token_1() };
@@ -163,7 +164,11 @@ pub mod SimpleVault {
     impl SimpleVault of super::ISimpleVault<ContractState> {
         #[inline(always)]
         fn only_owner(self: @ContractState) {
-            assert!(Contract::is_owner(self), "Not owner");
+            assert!(SimpleVault::is_owner(self), "Not owner");
+        }
+        #[inline(always)]
+        fn is_owner(self: @ContractState) -> bool {
+            self.owner.read() == get_caller_address()
         }
 
         fn deposit(ref self: ContractState, amount: u256) -> u256 {
@@ -274,12 +279,14 @@ pub mod SimpleVault {
         fn harvest(ref self: ContractState, account: ContractAddress, amount: u128, proof: Array<felt252>) {
             
             // Claim the rewards 
-            let rewards: u256 = self.claimer.write(amount, proof);
+            self.claimer.read().claim(amount, proof);
             
             // Reinvest the corresponding rewards to the pool
-            self.deposit.write(rewards);
+            let amount_u256: u256 = amount.try_into().unwrap();
 
-            self.emit(Harvested { user: account, reinvested_rewards: rewards });                
+            self.deposit(amount_u256);
+
+            self.emit(Harvested { user: account, reinvested_rewards: amount_u256 });                
         }
 
         fn total_supply(self: @ContractState) -> u256 {
@@ -288,12 +295,6 @@ pub mod SimpleVault {
         
         fn token(self: @ContractState) -> felt252 {
             self.token.read().name() // Question: what is the name? should be added
-        }
-
-        // Function to update the claim contract address 
-        fn updateNostraClaimer(ref self: ContractState, newAddress: ContractAddress) {
-            self.only_owner.read();
-            self.claimer.write(newAddress);
         }
     }
 }
